@@ -236,66 +236,71 @@ test('can get the network status', function (t) {
   });
 });
 
-test('wifi peer is marked unavailable if announcements stop', function (t) {
-  // Store the original threshold so that it can be restored
-  // at the end of the test.
-  var originalThreshold = thaliConfig.TCP_PEER_UNAVAILABILITY_THRESHOLD;
-  // Make the threshold a bit shorter so that the test doesn't
-  // have to wait for so long.
-  thaliConfig.TCP_PEER_UNAVAILABILITY_THRESHOLD =
-    thaliConfig.SSDP_ADVERTISEMENT_INTERVAL * 2;
-  var testPeerIdentifier = uuid.v4();
-  var testServerHostAddress = randomstring.generate({
-    charset: 'hex', // to get lowercase chars for the host address
-    length: 8
-  });
-  var testServerPort = 8080;
-  var testServer = new nodessdp.Server({
-    location: 'http://' + testServerHostAddress + ':' + testServerPort,
-    udn: thaliConfig.SSDP_NT,
-    // Make the interval 10 times longer than expected
-    // to make sure we determine the peer is gone while
-    // waiting for the advertisement.
-    adInterval: thaliConfig.SSDP_ADVERTISEMENT_INTERVAL * 10
-  });
-  testServer.setUSN(USN.stringify({
-    peerIdentifier: testPeerIdentifier,
-    generation: 0
-  }));
-
-  var spy = sinon.spy();
-  var availabilityChangedHandler = function (peer) {
-    if (peer.peerIdentifier !== testPeerIdentifier) {
-      return;
-    }
-
-    // TODO Apply changes from #904 to tests
-    spy();
-    if (spy.calledOnce) {
-      t.equal(peer.peerAvailable, true, 'peer should be available');
-    } else if (spy.calledTwice) {
-      t.equal(peer.peerAvailable, false, 'peer should become unavailable');
-
-      ThaliMobile.emitter.removeListener('peerAvailabilityChanged',
-        availabilityChangedHandler);
-      testServer.stop(function () {
-        thaliConfig.TCP_PEER_UNAVAILABILITY_THRESHOLD = originalThreshold;
-        t.end();
-      });
-    }
-  };
-  ThaliMobile.emitter.on('peerAvailabilityChanged', availabilityChangedHandler);
-
-  ThaliMobile.start(express.Router())
-  .then(function () {
-    return ThaliMobile.startListeningForAdvertisements();
-  })
-  .then(function () {
-    testServer.start(function () {
-      // Handler above should get called.
+test('wifi peer is marked unavailable if announcements stop',
+  function () {
+    return global.NETWORK_TYPE !== ThaliMobile.networkTypes.WIFI;
+  },
+  function (t) {
+    // Store the original threshold so that it can be restored
+    // at the end of the test.
+    var originalThreshold = thaliConfig.TCP_PEER_UNAVAILABILITY_THRESHOLD;
+    // Make the threshold a bit shorter so that the test doesn't
+    // have to wait for so long.
+    thaliConfig.TCP_PEER_UNAVAILABILITY_THRESHOLD =
+      thaliConfig.SSDP_ADVERTISEMENT_INTERVAL * 2;
+    var testPeerIdentifier = uuid.v4();
+    var testServerHostAddress = randomstring.generate({
+      charset: 'hex', // to get lowercase chars for the host address
+      length: 8
     });
-  });
-});
+    var testServerPort = 8080;
+    var testServer = new nodessdp.Server({
+      location: 'http://' + testServerHostAddress + ':' + testServerPort,
+      udn: thaliConfig.SSDP_NT,
+      // Make the interval 10 times longer than expected
+      // to make sure we determine the peer is gone while
+      // waiting for the advertisement.
+      adInterval: thaliConfig.SSDP_ADVERTISEMENT_INTERVAL * 10
+    });
+    testServer.setUSN(USN.stringify({
+      peerIdentifier: testPeerIdentifier,
+      generation: 0
+    }));
+
+    var spy = sinon.spy();
+    var availabilityChangedHandler = function (peer) {
+      if (peer.peerIdentifier !== testPeerIdentifier) {
+        return;
+      }
+
+      // TODO Apply changes from #904 to tests
+      spy();
+      if (spy.calledOnce) {
+        t.equal(peer.peerAvailable, true, 'peer should be available');
+      } else if (spy.calledTwice) {
+        t.equal(peer.peerAvailable, false, 'peer should become unavailable');
+
+        ThaliMobile.emitter.removeListener('peerAvailabilityChanged',
+          availabilityChangedHandler);
+        testServer.stop(function () {
+          thaliConfig.TCP_PEER_UNAVAILABILITY_THRESHOLD = originalThreshold;
+          t.end();
+        });
+      }
+    };
+    ThaliMobile.emitter.on('peerAvailabilityChanged', availabilityChangedHandler);
+
+    ThaliMobile.start(express.Router())
+    .then(function () {
+      return ThaliMobile.startListeningForAdvertisements();
+    })
+    .then(function () {
+      testServer.start(function () {
+        // Handler above should get called.
+      });
+    });
+  }
+);
 
 test('native peer should be removed if no availability updates ' +
 'were received during availability timeout',
@@ -1287,48 +1292,54 @@ test('network changes not emitted in stopped state', function (t) {
   });
 });
 
-test('calls correct starts when network changes', function (t) {
-  var listeningSpy = null;
-  var advertisingSpy = null;
+test('calls correct starts when network changes',
+  function () {
+    // works only in wifi mode because it fires non-tcp network changes
+    return global.NETWORK_TYPE !== ThaliMobile.networkTypes.WIFI;
+  },
+  function (t) {
+    var listeningSpy = null;
+    var advertisingSpy = null;
 
-  var networkChangedHandler = function (networkChangedValue) {
-    if (networkChangedValue.wifi !== 'off') {
-      return;
-    }
-    ThaliMobileNativeWrapper.emitter.removeListener('networkChangedNonTCP',
-      networkChangedHandler);
-    ThaliMobile.startListeningForAdvertisements()
-    .then(function (combinedResult) {
-      t.equals(combinedResult.wifiResult.message, 'Radio Turned Off',
+    var networkChangedHandler = function (networkChangedValue) {
+      if (networkChangedValue.wifi !== 'off') {
+        return;
+      }
+      ThaliMobileNativeWrapper.emitter.removeListener('networkChangedNonTCP',
+        networkChangedHandler);
+      ThaliMobile.startListeningForAdvertisements()
+      .then(function (combinedResult) {
+        t.equals(combinedResult.wifiResult.message, 'Radio Turned Off',
+                'specific error expected');
+        return ThaliMobile.startUpdateAdvertisingAndListening();
+      })
+      .then(function (combinedResult) {
+        t.equals(combinedResult.wifiResult.message, 'Radio Turned Off',
               'specific error expected');
-      return ThaliMobile.startUpdateAdvertisingAndListening();
-    })
-    .then(function (combinedResult) {
-      t.equals(combinedResult.wifiResult.message, 'Radio Turned Off',
-            'specific error expected');
-      listeningSpy = sinon.spy(ThaliMobile,
-        'startListeningForAdvertisements');
-      advertisingSpy = sinon.spy(ThaliMobile,
-        'startUpdateAdvertisingAndListening');
-      return testUtils.toggleWifi(true);
-    })
+        listeningSpy = sinon.spy(ThaliMobile,
+          'startListeningForAdvertisements');
+        advertisingSpy = sinon.spy(ThaliMobile,
+          'startUpdateAdvertisingAndListening');
+        return testUtils.toggleWifi(true);
+      })
+      .then(function () {
+        t.equals(listeningSpy.callCount, 1,
+          'startListeningForAdvertisements should have been called');
+        t.equals(advertisingSpy.callCount, 1,
+          'startUpdateAdvertisingAndListening should have been called');
+        ThaliMobile.startListeningForAdvertisements.restore();
+        ThaliMobile.startUpdateAdvertisingAndListening.restore();
+        t.end();
+      });
+    };
+    ThaliMobile.start(express.Router())
     .then(function () {
-      t.equals(listeningSpy.callCount, 1,
-        'startListeningForAdvertisements should have been called');
-      t.equals(advertisingSpy.callCount, 1,
-        'startUpdateAdvertisingAndListening should have been called');
-      ThaliMobile.startListeningForAdvertisements.restore();
-      ThaliMobile.startUpdateAdvertisingAndListening.restore();
-      t.end();
+      ThaliMobileNativeWrapper.emitter.on('networkChangedNonTCP',
+        networkChangedHandler);
+      testUtils.toggleWifi(false);
     });
-  };
-  ThaliMobile.start(express.Router())
-  .then(function () {
-    ThaliMobileNativeWrapper.emitter.on('networkChangedNonTCP',
-      networkChangedHandler);
-    testUtils.toggleWifi(false);
-  });
-});
+  }
+);
 
 if (!tape.coordinated) {
   return;
@@ -1414,9 +1425,11 @@ function (t) {
 });
 
 // Next test only for BLUETOOTH/BOTH network type
+// FIXME: It doesn't work with mocked mobile
 test('can get data from all participants',
   function () {
-    return global.NETWORK_TYPE === ThaliMobile.networkTypes.WIFI;
+    return global.NETWORK_TYPE === ThaliMobile.networkTypes.WIFI ||
+      !platform._isRealMobile;
   },
   function (t) {
     var uuidPath = '/uuid';
