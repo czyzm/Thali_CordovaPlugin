@@ -298,7 +298,7 @@
  *
  * A call to `multiConnect` will immediately return with no information other
  * than a confirmation that the request was received or an error if this is not
- * a `multiConnect` platform. A separate {@link multiConnectResolve}
+ * a `multiConnect` platform. A separate {@link multiConnectResolved}
  * asynchronous callback will be fired with the actual result of the method
  * call.
  *
@@ -419,6 +419,28 @@
  * @param {module:thaliMobileNative~ThaliMobileCallback} callback
  */
 
+/**
+ * This method is only supported on Android. If called on iOS it MUST return
+ * 'Method not supported on this platform'.
+ *
+ * In theory all of our Android devices support WiFi (who doesn't) but if we
+ * are on a device that doesn't have WiFi then this method MUST return a
+ * 'Wifi is not enabled' error.
+ *
+ * It is up to the caller to know the existing state of the WiFi radio and to
+ * know if it was the app who put the radio into that state. For example, if
+ * the WiFi radio is off and the app didn't turn the radio off then this
+ * implies the user or another app turned it off and perhaps it would not be
+ * wise for the app to turn it back on without asking the user's permission?
+ *
+ * @private
+ * @function external:"Mobile('setWifiRadioState')".callNative
+ * @param {boolean} setRadioTo If true then turn the WiFi radio on. If the Wifi
+ * radio was already on then that is not an error. If false then turn the Wifi
+ * radio off. If the Wifi radio was laready off then that is not an error.
+ * @param {module:thaliMobileNative~ThaliMobileCallback} callback
+ */
+
 /*
               registerToNative Methods
  */
@@ -439,7 +461,6 @@
  * | Illegal peerID | The peerID has a format that could not have been returned by the local platform |
  * | startListeningForAdvertisements is not active | Go start it! |
  * | Connection could not be established | The attempt to connect to the peerID failed. This could be because the peer is gone, no longer accepting connections or the radio stack is just horked. |
- * | Connection wait timed out | This is for the case where we are a lexically smaller peer and the lexically larger peer doesn't establish a connection within a reasonable period of time. |
  * | Max connections reached | The native layers have practical limits on how many connections they can handle at once. If that limit has been reached then this error is returned. The only action to take is to wait for an existing connection to be closed before retrying.  |
  * | No Native Non-TCP Support | There are no non-TCP radios on this platform. |
  * | No available TCP ports | There are no TCP ports available to listen on. |
@@ -450,7 +471,7 @@
  * @callback multiConnectResolvedCallback
  * @property {string} syncValue
  * @property {?string} error
- * @property {?number} port
+ * @property {?number} listeningPort
  */
 
 /**
@@ -467,10 +488,7 @@
 
 /**
  * Identifies the peerID of the peer with whom a `multiConnect` initiated
- * connection (read: MCSession) failed. This method MUST be fired when the
- * connection fails even if it is just because of a call to `disconnect`. If
- * this event is fired in direct response to a `disconnect` then error MUST be
- * null.
+ * connection (read: MCSession) failed.
  *
  * @public
  * @callback multiConnectConnectionFailureCallback
@@ -480,7 +498,12 @@
 
 /**
  * Fires the multiConnectConnectionFailureCallback if a multiConnect connection
- * fails for a reason other than a call to {@link disconnect}.
+ * fails. This failure can include a failure induced by a call to `disconnect`.
+ * Note, however, that this callback MUST only occur in response to an actual
+ * connection being terminated. So, for example, if disconnect is called with
+ * a peerID that isn't in the connected state then the disconnect will be
+ * successful but because no actual MCSession was terminated there won't be
+ * a multiConnectConnectionFailureCallback.
  *
  * @public
  * @function external:"Mobile(`multiConnectConnectionFailure`)".registerToNative
@@ -624,8 +647,13 @@ module.exports.radioState = {
  * @property {string} bssidName If null this value indicates that either
  * wifiRadioOn is not 'on' or that the Wi-Fi isn't currently connected to an
  * access point. If non-null then this is the BSSID of the access point that
- * Wi-Fi is connected to. If missing, means that it was not possible to get
+ * Wi-Fi is connected to. If missing, this means that it was not possible to get
  * the BSSID (for example, this platform doesn't provide an API for it).
+ * @property {string} ssidName If null this value indicates that either
+ * wifiRadioOn is not 'on' or that the Wi-Fi isn't currently connected to an
+ * access point. If non-null then this is the SSID of the access point that
+ * Wi-Fi is connected to. If missing, this means that it was not possible to get
+ * the SSID (for example, this platform doesn't provide an API for it).
  */
 
 /**
